@@ -1,0 +1,187 @@
+1. 약자 풀네임
+GCC: GNU Compiler Collection (GNU C Compiler)
+API: Application Programming Interface
+ABI: Application Binary Interface
+CFS: Completely Fair Scheduler
+SMP: Symmetric Multi Processing
+MPP: Massively Parallel Processing
+COW (Copy-on-Write): 복사 시점까지 메모리를 공유하고, 쓰기 시점에만 복사
+
+2. Hard link / Symbol link 차이점
+Hard link는 동일한 inode를 공유, 원본 파일이 지워져도 다른 hard link로 접근 가능 (원본 파일 그 자체를 복사함)
+Symbolic link는 원본 파일의 경로를 참조, 원본 삭제 시 접근 불가능 (원본 파일의 경로를 가르킴)
+
+3. File Permission
+read(r): 4, write(w): 2, execute(x): 1
+rwx = 7, rw- = 6, r-x = 5, r-- = 4, --- = 0
+ex) chmod 744 [Filename] -> 해당 파일의 권한을 rwxr__r__ 로 변경 -> 파일 소유자(user)는 읽기,쓰기,실행 모두 가능 , 그룹 사용자는 읽기만 가능 , 다른 사용자는 읽기만 가능하다는 뜻
+ls -l 명령어를 통해 모든 파일의 permission 확인 가능
+
+4. 컴파일 에러 처리
+perror() -> 에러 발생 시 해당 에러의 값이 errno라는 전역변수에 자동 저장. perror 함수는 errno 값을 통해 자동으로 해당 에러 메시지를 출력.
+int main(void) {
+    int fd;
+    extern int errno;
+    errno = 0;
+
+    fd = open("read.txt", O_RDONLY);  // 
+
+    if (fd == -1) {
+        perror("open");  // open()함수 오류 발생 시 -> open : No such file or directory 가 출력됨 (errno = 2 라는 전역 변수를 통하여 ": No such file or directroy"가 자동으로 출력됨)
+        printf("errno: %d\n", errno);  // errno 전역 변수에는 '2'가 저장됨.
+        return 1;
+    }
+
+    close(fd);
+    return 0;
+}
+5. PID
+PID = Process ID (프로세스 식별 가능)
+systemd = init process , PID = 1
+<sys/types.h> , <unistd.h> 헤더파일 include 필수
+getpid(): 현재 프로세스의 PID 반환
+getppid(): 부모 프로세스의 PID 반환
+
+6. Execute 함수들
+execl() , execv() , execlp() 차이점
+
+execl("/bin/ls", "ls", "-l", NULL); // 절대경로/상대경로 사용  , 인자 전달 따로따로
+
+char *args[] = {"ls", "-l", NULL}; 
+execv("/bin/ls", args); // 절대경로/상대경로 사용 , 인자 전달 배열로 한 번에
+
+execlp("ls", "ls", "-l", NULL); // 경로 = ls(환경변수) 로 대체하여 전달 , 인지 전달 따로따로
+
+실행되면 현재 프로세스를 덮어쓰기 때문에 뒤 코드 실행되지 않음.
+int main(void){
+  int ret;
+  ret = execl("bin/ls" , "ls" , "-l" , NULL);
+  if (ret == -1)
+    perror("execl")
+  printf("End of execl() test program\n");    // 만약 execl()이 정상적으로 실행된다면 ls -l 프로그램이 대신 실행되기 때문에  printf()는 출력이 안됨.
+  return 1;
+}
+
+7. fork()
+int main(void){
+  pid_t pid;
+  pid = fork();
+  if(pid > 0)
+    printf("I am the parent of pid=%d!\n" ,pid);  // parent process의 pid 와 pid 변수에 저장된 pid 값은 서로 다름. pid 변수에 저장된 pid = child process의 pid임.
+  else if(!pid)
+    printf("I am the child!\n");  // child prcoess의 pid 와 pid 변수에 저장된 pid 값은 서로 다름. pid 변수에 저장된 pid = 0임.
+  else if (pid == -1){
+    perror("fork");
+  retrun 1;
+}
+pid > 0: 부모 프로세스, pid == 0: 자식 프로세스, pid == -1: 오류
+자식 프로세스는 부모의 복사본
+
+8. atexit()
+atexit(func): 프로그램 종료 시 호출될 함수를 등록
+main() 함수가 return 혹은 exit()로 종료될 시 atexit()함수가 실행됨. atexit() 정상 실행 시 return 0 , 실패 시 return 1
+void out (void){
+  printf("atexit() succeeded!\n");
+}
+int main(void){
+  if(atexit(out))          // main()함수 종류 후 out()함수가 실행됨
+    fprintf(stderr, "atexit() failed! \n");    
+  return 0;
+}
+
+9. Zombie / Orphan Process
+Zombie process = child process가 먼저 종료됨.
+Orphan process = parent process가 먼저 종료됨.
+
+
+int main(void){          
+  pid_t pid;
+
+  pid = fork();
+  if (pid>0){
+    printf("I am the PID of the parent=%d!\n" , getpid());        // parent process 먼저 종료
+    }
+  else if (!pid){
+    printf("I am the PID of the Child=%d!\n" , getpid());         // child process pid 출력
+    printf("I am the PPID of the Child=%d!\n", getppid());        // child process ppid 출력
+    sleep(5);
+    printf("I am the PPID of the Child=%d!\n", getppid());        // child process ppid 출력 , parent process가 종료된 후여서 parent process의 ppid가 child process에게 계승됨(조부모).
+  }
+  else if (pid == -1){
+    perror("forK");
+  return 1;
+}
+
+wait()함수를 통하여 Zombie process가 되는 것을 예방 할 수 있음.
+int main(void){
+  int status;
+  pid_t pid;
+  if (!fork()) {
+    printf("Child PiID = %d\n" , getpid());
+    sleep(10);
+    return 1;
+  }
+  pid = wait(&status);              // wait() -> child process가 먼저 종료될 때까지 기다림. 이후 status 변수에 종료된 child process pid를 저장함.
+  if(pid == -1){
+    perror("wait");
+}
+  
+10. system() 함수
+system("command"): 쉘 명령어 실행, 종료 코드 반환
+int main(){    
+  int ret = system("ls -l");      // 쉘에서 ls 명령어를 입력한 것과 동일한 결과 출력
+  
+  printf("ret : %d \n", ret);    // ret 변수에는 ls 명령어의 return 값 출력 (성공 : 0 , 실패 : > 0)
+  return 0;
+}
+11. getuid(), getgid()
+getuid(): 사용자(user) ID, getgid(): 그룹(group) ID 반환
+
+12. Process Scheduling
+Cooperative: 프로세스가 자발적 CPU 반환
+Preemptive: 강제적으로 CPU 뺏음
+Timeslice: 프로세스당 할당된 실행 시간 (preemptive 에서만 유효함)
+
+13. I/O bound vs CPU bound
+해당 프로세스가 CPU 연산 시간이 많은지 , I/O를 기다리는 시간이 많은지를 파악하여 구분함.
+I/O bound: 입출력이 주된 작업, 자주 대기
+CPU bound: 연산 위주, CPU 점유율 높음
+
+14. sched_yield()
+현재 프로세스가 CPU 양보
+
+15. nice()
+nice(value): 프로세스 우선순위 조정 (값이 클수록 낮은 우선순위 , -19 ~ 20)
+
+16. getpriority(), setpriority()
+getpriority(which, who): 우선순위 조회      // who = 0 이면 user를 의미함.
+setpriority(which, who, prio): 우선순위 설정    //who = 0 이면 user를 의미함.
+
+17. sched_getaffinity()
+프로세스가 실행 가능한 CPU 마스크 반환
+
+18. Race Condition
+둘 이상의 스레드가 공유 자원에 동시에 접근할 때 발생  // 의미 꼭 알기
+
+19. Mutex
+pthread_mutex_lock(), pthread_mutex_unlock() 사용
+임계영역 보호에 사용
+
+20. Deadlock
+서로 자원을 점유한 채, 해제를 기다려 무한 대기    // 의미 꼭 알기\
+
+21. 쓰레드 생성
+pthread_create(&tid, NULL, function, arg);
+Signal 관련
+signal(sig, handler): 시그널 핸들러 등록
+pause(): 시그널 대기
+kill(pid, sig): 시그널 전송
+sigprocmask(), sigpending() 등으로 마스크 및 대기 시그널 관리
+Time 관련
+time(), gettimeofday(), clock_gettime()
+sleep(), usleep(), nanosleep(), alarm()
+POSIX clock: CLOCK_REALTIME, CLOCK_MONOTONIC 등
+File 관련
+open(), read(), write(), close()
+O_RDONLY, O_WRONLY, O_RDWR, O_CREAT, O_APPEND, O_TRUNC 등
+각 함수의 return 값은 파일 디스크립터 또는 에러 코드
