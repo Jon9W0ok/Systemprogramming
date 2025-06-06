@@ -1,11 +1,11 @@
 1. 약자 풀네임
-GCC: GNU Compiler Collection (GNU C Compiler)
+GCC: GNU Compiler Collection (=GNU C Compiler)
 API: Application Programming Interface
 ABI: Application Binary Interface
 CFS: Completely Fair Scheduler
 SMP: Symmetric Multi Processing
 MPP: Massively Parallel Processing
-COW (Copy-on-Write): 복사 시점까지 메모리를 공유하고, 쓰기 시점에만 복사
+COW: Copy-On-Write
 
 2. Hard link / Symbol link 차이점
 Hard link는 동일한 inode를 공유, 원본 파일이 지워져도 다른 hard link로 접근 가능 (원본 파일 그 자체를 복사함)
@@ -19,6 +19,7 @@ ls -l 명령어를 통해 모든 파일의 permission 확인 가능
 
 4. 컴파일 에러 처리
 perror() -> 에러 발생 시 해당 에러의 값이 errno라는 전역변수에 자동 저장. perror 함수는 errno 값을 통해 자동으로 해당 에러 메시지를 출력.
+
 int main(void) {
     int fd;
     extern int errno;
@@ -35,8 +36,9 @@ int main(void) {
     close(fd);
     return 0;
 }
+
 5. PID
-PID = Process ID (프로세스 식별 가능)
+PID = Process ID (프로세스 식별)
 systemd = init process , PID = 1
 <sys/types.h> , <unistd.h> 헤더파일 include 필수
 getpid(): 현재 프로세스의 PID 반환
@@ -93,7 +95,6 @@ int main(void){
 Zombie process = child process가 먼저 종료됨.
 Orphan process = parent process가 먼저 종료됨.
 
-
 int main(void){          
   pid_t pid;
 
@@ -112,7 +113,7 @@ int main(void){
   return 1;
 }
 
-wait()함수를 통하여 Zombie process가 되는 것을 예방 할 수 있음.
+wait()함수를 통하여 zombie process가 되는 것을 예방 할 수 있음.
 int main(void){
   int status;
   pid_t pid;
@@ -134,6 +135,7 @@ int main(){    
   printf("ret : %d \n", ret);    // ret 변수에는 ls 명령어의 return 값 출력 (성공 : 0 , 실패 : > 0)
   return 0;
 }
+
 11. getuid(), getgid()
 getuid(): 사용자(user) ID, getgid(): 그룹(group) ID 반환
 
@@ -144,11 +146,26 @@ Timeslice: 프로세스당 할당된 실행 시간 (preemptive 에서만 유효�
 
 13. I/O bound vs CPU bound
 해당 프로세스가 CPU 연산 시간이 많은지 , I/O를 기다리는 시간이 많은지를 파악하여 구분함.
-I/O bound: 입출력이 주된 작업, 자주 대기
-CPU bound: 연산 위주, CPU 점유율 높음
+top 명령어를 통해 CPU 점유율을 파악할 수 있음.
+I/O bound: 입출력이 주된 작업, I/O wating 시간이 길다.
+CPU bound: 연산 위주, CPU를 이용하여 연산하는 시간이 길다. 
 
-14. sched_yield()
+14. sched_yield() 
 현재 프로세스가 CPU 양보
+void main(void){
+    int i, j, k;
+	clock t start, end;
+	for (i=0 ; i<INT_MAX; i++){
+		start = clock()
+		for (j=0 ; j<0X003FFFFF ; j++){
+			k=j;
+			sched_yield();			//대기중인 다른 프로세스에게 CPU 주도권을 넘김. 다른 프로세스가 처리되고 마지막으로 처리되기 때문에 실행시간(time = end-start)이 오래 걸린다.
+		}
+		end = clock();
+		printf(“Elapsed time(%d):%f\n” , i , ((double)(end-start)/CLOCKS_PER_SEC);
+	}
+}	
+
 
 15. nice()
 nice(value): 프로세스 우선순위 조정 (값이 클수록 낮은 우선순위 , -19 ~ 20)
@@ -156,32 +173,136 @@ nice(value): 프로세스 우선순위 조정 (값이 클수록 낮은 우선순
 16. getpriority(), setpriority()
 getpriority(which, who): 우선순위 조회      // who = 0 이면 user를 의미함.
 setpriority(which, who, prio): 우선순위 설정    //who = 0 이면 user를 의미함.
+int ret;
+ret = getpriority(PRIO_PROCESS , 0);     // PRIO_PROCESS = 프로세스 이름 , 0 = 사용중인 user를 의미
 
-17. sched_getaffinity()
-프로세스가 실행 가능한 CPU 마스크 반환
+ret = setpriority(PRIO_PROCESS , 0 , 10);    // PRIO_PROCESS = 프로세스 이름 , 0 = 사용중인 user , 10 = 설정하고 싶은 nice 값을 의미
 
+17. Process Affinity
+
+프로세스가 지정된 CPU에서 실행되도록 설정.
+Soft affinity -> 가능한 지정된 CPU에서 프로세스가 실행되도록 함.
+Hard affinity -> 무조건 지정된 CPU에서만 프로세스가 실행되도록 함.
+
+void main(void){
+    cpu_set_t set;
+    int ret,i;
+    CPU_ZERO(&set);
+    ret = sched_getaffinity(0, sizeof(cpu_set_t) , &set);            // PID = 0 인 process가 어떤 CPU에서 동작할 수 있는지 파악하여 set 변수에 저장함
+    if(ret == -1)
+        perror("sched_getaffinity");
+    for(i=0 ; i<CPU_SETSIZE ; i++){
+        int cpu;
+        cpu = CPU_ISSET(i, &set);
+        printf("cpu=%i is %s\n" , i , cpu ? "set" : "unset");        // PID = 0 인 process가 어떤 CPU에서 동작할 수 있는지 출력함
+    }
+}
+
+sched_setaffinity()
+반환값
+성공 시 : 0 , 실패 시: -1
+void main(void){
+    cpu_set_t cs;
+    int cpus= 0 , cpu , ret;
+    unsigned int i;
+    pid_t pid;
+
+    CPU_ZERO(&cs);
+    sched_getaffinity(0, sizeof(cs) , &cs);                // PID = 0 인 process가 동작 가능한 cpu 확인
+
+    for(i = 0 ; i< CPU_SETSIZE ; i++){
+        if(CPU_ISSET(i,&cs)))
+            cpus++;
+    }
+    printf("Total No. of CPUs: %d\n", cpus);
+    printf("Input SET_CPU No. 0~%d: ", cpus - 1);
+    scanf("%d" , &cpu);                                    // 동작시키고 싶은 CPU 번호를 입력
+    CPU_ZERO(&cs);
+    CPU_SET(cpu , &cs);
+    pid = getpid();
+    ret = sched_setaffinity(pid , sizeof(cpu_set_t) , &cs);        // PID = pid 인 프로세스를 cs변수에 저장된 CPU에서 동작하도록 설정
+    if (ret == -1){
+        perror("sched_setaffinity");
+        return;
+    }
+    while(1);
+}
 18. Race Condition
 둘 이상의 스레드가 공유 자원에 동시에 접근할 때 발생  // 의미 꼭 알기
 
+은행 계좌 = Critical region (임계 구역)
+
+Thread A가 잔고를 수정 한 후에 Thread B가 수정해야하는데
+만약 은행에 잔고가 100이 있었다고 가정하면
+A가 100 -> 80 (20감소)으로 수정 후 B가 80 -> 60 (20감소)으로 수정하면 정상적인 동작이지만
+A와 B가 동시에 접근해서 100 -> 80 , 100 -> 80 으로 수정하면 60이 되어야할게 80으로 잘못되는 경우가 생김.
+
 19. Mutex
-pthread_mutex_lock(), pthread_mutex_unlock() 사용
-임계영역 보호에 사용
+위와 같은 상황을 방지하기 위해 한 명이 접근하면 다른 사람이 계좌에 접근하지 못하도록 하는 걸 Mutex라고 함.
+먼저 접근한 사람이 아래 함수를 이용하여 공유자원에 접근을 막고 , 일을 처리한 후 unlock 하여 다른 사용자가 이용할 수 있도록 함.
+pthread_mutex_lock(), pthread_mutex_unlock()
 
 20. Deadlock
-서로 자원을 점유한 채, 해제를 기다려 무한 대기    // 의미 꼭 알기\
+서로 자원을 점유한 채, 해제를 기다려 무한 대기    // 의미 꼭 알기
 
-21. 쓰레드 생성
-pthread_create(&tid, NULL, function, arg);
-Signal 관련
-signal(sig, handler): 시그널 핸들러 등록
-pause(): 시그널 대기
-kill(pid, sig): 시그널 전송
-sigprocmask(), sigpending() 등으로 마스크 및 대기 시그널 관리
-Time 관련
-time(), gettimeofday(), clock_gettime()
-sleep(), usleep(), nanosleep(), alarm()
-POSIX clock: CLOCK_REALTIME, CLOCK_MONOTONIC 등
+Thread A가 A계좌를 이용한 후에 B계좌로 접근해야하는데
+Thread B는 B계좌를 이용한 후에 A계좌로 접근해야하는 상황
+
+Thread A 입장에서는 B계좌를 다른 사람이 이용하고 있으니 계좌 A를 내려놓지 않고
+Thread B 입장에서는 A계좌를 다른 사람이 이용하고 있으니 계좌 B를 내려놓지 않는 상황
+
+
+21.Time 관련
+Time's data structure
+timespec -> nsec 저장 시 사용 , clock_gettime() 함수 사용 시
+timeval -> usec 저장 시 사용 , gettimeofday() 함수 사용 시
+
+CLOCK_REALTIME , CLOCK_MONOTONIC , CLOCK_MONOTONIC_RAW    -> sleep()함수와 관계없이 실행 시간이 측정됨.
+CLOCK_PROCESS_CPUTIME_ID , CLOCK_THREAD_CPUTIME_ID        -> sleep()함수를 실행한 시간을 제외하고 실행 시간이 측정됨. sleep() 시간 동안은 CPU가 정지되기 때문
+
+struct timespec start , end;
+clock_gettime(CLOCK_PROCESS_CPUTIME_ID , &start);        
+sleep(5)
+clock_gettime(CLOCK_PROCESS_CPUTIME_ID , &end);
+위와 같은 경우에 실행시간(end-start)에 sleep(5)의 시간이 포함되지 않음.
+
+struct timespec start , end;
+clock_gettime(CLOCK_MONOTONIC_RAW , &start);
+sleep(5)
+clock_gettime(CLOCK_MONOTONIC_RAW , &end);
+위와 같은 경우에 실행시간(end-start)에 sleep(5)의 시간이 포함됨.
+
+sleep(), usleep(), nanosleep() 차이점
+unsigned int sleep(unsigned int seconds); -> sleep(3);  // 약 3s 동안 정지
+int usleep(useconds_t microseconds);  -> usleep(500000);  // 0.5s 동안 정지
+int nanosleep(const struct timespec *req, struct timespec *rem);
+
+struct timespec ts;
+ts.tv_sec = 0;
+ts.tv_nsec = 10000000;  // 10ms = 10,000,000ns
+nanosleep(&ts, NULL);       -> 10ms 동안 정치 , 정지하고 싶은 시간을 timespec 구조체에 넣어서 전달 해줘야함.      
+
 File 관련
-open(), read(), write(), close()
-O_RDONLY, O_WRONLY, O_RDWR, O_CREAT, O_APPEND, O_TRUNC 등
-각 함수의 return 값은 파일 디스크립터 또는 에러 코드
+File descriptor(fd) : 접근하고 싶은 File의 번호라고 생각하기. 
+0번 = 키보드를 입력받는 file과 자동으로 연동 , 1번 = 화면에 데이터를 출력하는 file과 자동으로 연동 , 2번 = 에러메시지를 화면에 출력하는 file과 자동으로 연동되어 있음.
+그래서 새로운 file을 만들경우 항상 3이상의 file descriptor만 얻게 됨.
+
+stdin : 0    (표준 입력)    -> read()함수와 같이 사용되며 , 사용자의 입력 혹은 txt파일의 데이터를 입력으로 사용함.
+stdout : 1    (표준 출력)    -> write()함수와 같이 사용되며 , 화면에 데이터를 출력함.
+stderr : 2    (표준 에러)    -> 일반적으로 write()함수와 같이 사용되며 , 에러 메시지를 화면 혹은 로그에 출력함.
+
+open(), read(), write(), close() 차이 및 의미 알기
+O_RDONLY, O_WRONLY, O_RDWR, O_CREAT, O_APPEND, O_TRUNC 차이 및 의미 알기
+
+void main(void){
+    int fd;
+    const char *str = "Open Test File\n";
+    fd = open("./opentestfile" , O_WRONLY | O_CREAT , 644);            //쓰기 전용 , 파일 생성 flag 설정 , 644 = rw_r__r__ 으로 permission 설정(3번 참고) , fd에는 opentestfile에 대한 파일 디스크립터 저장.
+    if(fd == -1){
+        perror("open");
+        exit(0);
+    }
+    write(fd, str, strlen(str));            //fd를 통해 opentestfile임을 식별하고 str변수에 저장된 문자열을 쓴다.
+    close(fd);        //fd에 해당되는 file을 close함.
+}
+
